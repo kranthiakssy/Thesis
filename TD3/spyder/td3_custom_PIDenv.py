@@ -1,0 +1,139 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Tue May 25 10:34:09 2021
+
+@author: kranthi
+"""
+# Importing packages
+#import os
+#import torch as T
+#import torch.nn as nn
+#import torch.nn.functional as F
+#import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
+import numpy as np
+import gym
+import matplotlib.pyplot as plt
+
+# Importing local functions
+#from ddpg_module import CriticNetwork, ActorNetwork, OUActionNoise, ReplayBuffer
+from td3_agent import Agent
+from Custom_PIDEnv import PIDEnv
+
+# Function for plotting scores
+def plotLearning(scores, filename, x=None, window=5):   
+    N = len(scores)
+    running_avg = np.empty(N)
+    for t in range(N):
+	    running_avg[t] = np.mean(scores[max(0, t-window):(t+1)])
+    if x is None:
+        x = [i for i in range(N)]
+    plt.figure()
+    plt.ylabel('Score')       
+    plt.xlabel('Game')                     
+    plt.plot(x, running_avg)
+    plt.savefig(filename)
+
+# Defining gym environment
+env = PIDEnv()
+#gym.make('Pendulum-v0') # 'LunarLanderContinuous-v2', 'MountainCarContinuous-v0',
+                                # 'Pendulum-v0'
+
+# Define all the state and action dimensions, and the bound of the action
+state_dim = env.observation_space.shape[0]
+action_dim = env.action_space.shape[0]
+action_bound = env.action_space.high[0]
+print("State Dim: {0}\n Action Dim: {1}\n Action Bound: {2}"\
+      .format(state_dim, action_dim, action_bound))
+
+# Agent creaation    
+agent = Agent(alpha=0.001, beta=0.001, input_dims=[state_dim], tau=0.005, env=env,
+              batch_size=100,  layer1_size=256, layer2_size=256, n_actions=action_dim,
+              action_bound=action_bound)
+
+agent.load_models()
+np.random.seed(0)
+
+# Tensorboard for visualization
+tb = SummaryWriter()
+
+# Iteration parameters
+episodes = 500 # no of episodes
+ns = 300 # no of steps to run in each episode    
+t = np.linspace(0,ns/10,ns+1) # define time points
+dt = t[1]-t[0] # time step duration
+
+# initial controller parameters
+def initialize():
+    global tune_param, pv, sp, e, delat_e, ie, dpv
+    tune_param = [0.1, 2, 0.1]  # Kp, Ti, Td respectively
+    pv = [0] # process value list
+    sp = 20 # setpoint
+    e = [0] # error list
+    delat_e = [0] # change in error list
+    ie = [0] # integral error list
+    dpv = [0] # change in pv list
+
+
+# action space function
+def statevectorfunc(state, sp, dt):
+    pv.append(state)
+    e.append(sp-pv[-1])
+    delat_e.append(e[-2]-e[-1])
+    ie.append(ie[-1]+e[-1]*dt)
+    dpv.append((pv[-1]-pv[-2])/dt)
+    statevec = [e[-1], delat_e[-1],ie[-1],dpv[-1],dt,pv[-1]]
+    return statevec
+
+score_history = []
+end_state = []
+# running for specific no of episodes
+for episode in range(1, episodes+1):
+    state = env.reset()
+    initialize()
+    done = False
+    score = 0        
+    for k in range(0,ns):
+        #env.render()
+        action = agent.choose_action(state)
+        tune_param += action
+        statevec = statevectorfunc(state, sp, dt)
+        new_state, reward, done, info  = env.step(tune_param, statevec)
+        agent.remember(state, action, reward, new_state, int(done))
+        agent.learn()
+        score += reward[0]
+        state = new_state
+    score_history.append(score)
+    end_state.append(new_state)
+    print('Episode:{} Score:{}'.format(episode, score))
+
+    # Tensorboard data update
+    #tb.add_scalar('Reward', score, i)
+    #tb.add_scalar('End_State', new_state, i)
+    #tb.add_scalar('Process_Value', pv[-1], i)
+
+    #tb.add_histogram('Actor.bias', agent.actor.fc1.bias, i)
+    #tb.add_histogram('Actor.weight', agent.actor.fc1.weight, i)
+    #tb.add_histogram('Actor.weight.grad', agent.actor.fc1.weight.grad, i)
+
+    if episode % 10 == 0:
+        agent.save_models()
+        
+    #if episode % 10 == 0:
+    #    plt.figure()
+    #    plt.plot(pv)
+    #    plt.savefig("tmp/graphs/PV"+str(i)+".png")
+
+
+    print('episode ', episode, 'score %.2f' % score,
+          'trailing 100 games avg %.3f' % np.mean(score_history[-100:]))
+    print("State at the end of episode: {}".format(state))
+        
+filename1 = 'tmp/graphs/Closed_Loop_system_score.png'
+filename2 = 'tmp/graphs/Closed_Loop_system_state.png'
+plotLearning(score_history, filename1, window=100)   
+plotLearning(end_state, filename2, window=100) 
+
+tb.close()
+    
+      
