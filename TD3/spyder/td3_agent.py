@@ -73,7 +73,7 @@ class Agent():
         self.actor.eval()
         state = T.tensor(observation, dtype=T.float).to(self.actor.device)
         mu = self.actor.forward(state).to(self.actor.device)
-        mu_prime = mu
+        mu_prime = T.clamp(mu, self.min_action[0], self.max_action[0])
         self.actor.train()
         return mu_prime.cpu().detach().numpy()
 

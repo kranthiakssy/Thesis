@@ -22,22 +22,22 @@ class PIDEnv(Env):
         self.action_space = Box(low=np.float32(np.array([-1,-1,-1])),\
                                      high=np.float32(np.array([1,1,1]))) #Discrete(3)
         # Observed Process Value 
-        self.observation_space = Box(low=np.float32(np.array([0])),\
-                                     high=np.float32(np.array([200])))
+        self.observation_space = Box(low=np.float32(np.array([-100,-100,-100,-100])),\
+                                     high=np.float32(np.array([100,100,100,100])))
 
         # Initialization Parameters
-        self.init_state = np.array([0]) # initial state of the process value
-        self.Gp = np.array([2]) # Process Gain
-        self.taup = np.array([5]) # Process time constant
-        self.thetap = np.array([1]) # Process delay
+        self.init_state = 0 # initial state of the process value
+        self.Gp = 2 # Process Gain
+        self.taup = 5 # Process time constant
+        self.thetap = 1 # Process delay
 
         # Parameters for reward functions
-        self.k1 = np.array([1])
-        self.k2 = np.array([1])
-        self.c1 = np.array([1])
-        self.c2 = np.array([1])
-        self.epsilon = np.array([0.01])
-        self.epsilon1 = np.array([0.01])
+        self.k1 = 1
+        self.k2 = 1
+        self.c1 = 1
+        self.c2 = 1
+        self.epsilon = 0.01
+        self.epsilon1 = 0.01
 
 
     def process(self, y,t,u,dummy):
@@ -45,18 +45,18 @@ class PIDEnv(Env):
         return dydt
 
     # defining environment step function
-    def step(self, actionvector, statevector):
+    def step(self, actionvector, statevector, dt, pv):
         #Action arguments
         self.Kp = np.max([0,actionvector[0]]) # Proportional Gain
         self.Ti = np.max([0.000001,actionvector[1]]) # Integral Time
         self.Td = np.max([0,actionvector[2]]) # Derivative time
         # Statevector arguments
-        self.e = statevector[0][0] # error: e(t)
-        self.delta_e = statevector[1][0] # Delta error: e(t-1)-e(t)
-        self.ie = statevector[2][0] # Integral Error: ie(t-1) + e(t) * dt
-        self.dpv =  statevector[3][0] # Process value rate of change: (PV(t)-PV(t-1))/dt
-        self.dt = statevector[4] # time step duration: (t)-(t-1)
-        self.pv = statevector[5][0] # Process Value: pv
+        self.e = statevector[0] # error: e(t)
+        self.delta_e = statevector[1] # Delta error: e(t-1)-e(t)
+        self.ie = statevector[2] # Integral Error: ie(t-1) + e(t) * dt
+        self.dpv =  statevector[3] # Process value rate of change: (PV(t)-PV(t-1))/dt
+        self.dt = dt # time step duration: (t)-(t-1)
+        self.pv = pv # Process Value: pv
        # PID terms
         P = self.Kp * self.e # P-Term
         I = self.Kp / self.Ti * self.ie # I-Term
@@ -66,7 +66,7 @@ class PIDEnv(Env):
         cout = np.max([0, np.min([100, cout])])
         # Running odeint solver for ODE
         y = odeint(self.process,self.pv,[0,self.dt],args=(cout,"dummy"))
-        self.state = y[-1]
+        self.state = y[-1][0]
  
         # Defining Reward Function
         # r1 function
@@ -95,16 +95,16 @@ class PIDEnv(Env):
         # Info function
         info = {}
 
-        return np.array(self.state), reward, done, info
+        return self.state, reward, done, info
 
     def render(self):
         # Implement viz
         pass
     
     def reset(self):
-        self.init_state = np.array([0]) # initial state of the process value
-        self.state = np.array([0]) # Reset observed process value
-        return np.array(self.state)
+        self.init_state = 0 # initial state of the process value
+        self.state = 0 # Reset observed process value
+        return self.state
     
 
 # Running locally
@@ -126,7 +126,7 @@ if __name__ == '__main__':
 
     # initial controller parameters
     def initialize():
-        global tune_param, pv, sp, e, delat_e, ie, dpv
+        global tune_param, pv, sp, e, delat_e, ie, dpv, statevec
         tune_param = [0.1, 2, 0.1]  # Kp, Ti, Td respectively
         pv = [0] # process value list
         sp = 20 # setpoint
@@ -134,16 +134,16 @@ if __name__ == '__main__':
         delat_e = [0] # change in error list
         ie = [0] # integral error list
         dpv = [0] # change in pv list
+        statevec = [0,0,0,0] # e, delta_e, ie, dpv
 
 
     # action space function
-    def statevectorfunc(state, sp, dt):
-        pv.append(state)
+    def statevectorfunc(pv, sp, dt):
         e.append(sp-pv[-1])
         delat_e.append(e[-2]-e[-1])
         ie.append(ie[-1]+e[-1]*dt)
         dpv.append((pv[-1]-pv[-2])/dt)
-        statevec = [e[-1], delat_e[-1],ie[-1],dpv[-1],dt,pv[-1]]
+        statevec = [e[-1], delat_e[-1],ie[-1],dpv[-1]]
         return statevec
 
     # running for specific no of episodes
@@ -156,8 +156,9 @@ if __name__ == '__main__':
             #env.render()
             action = env.action_space.sample()
             tune_param += action
-            statevec = statevectorfunc(state, sp, dt)
-            state, reward, done, info  = env.step(tune_param, statevec)
-            score += reward[0]
+            state, reward, done, info  = env.step(tune_param, statevec, dt, pv[-1])
+            pv.append(state)
+            statevec = statevectorfunc(pv, sp, dt)
+            score += reward
         print('Episode:{} Score:{}'.format(episode, score))
         #print("Process Value: {}".format(pv))
