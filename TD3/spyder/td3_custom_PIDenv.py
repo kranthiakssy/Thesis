@@ -8,6 +8,7 @@ Created on Tue May 25 10:34:09 2021
 #import os
 from math import ceil
 from os import stat
+import time 
 
 from numpy.random import rand
 #import torch as T
@@ -68,8 +69,8 @@ tb = SummaryWriter()
 # tb.add_graph(agent.actor,T.tensor([0,0,0,0]))
 
 # Iteration parameters
-episodes = 500 # no of episodes
-update_tb = 100 # Update episode no for tensorboard
+episodes = 50 # no of episodes
+update_tb = 10 # Update episode no for tensorboard
 ns = 300 # no of steps to run in each episode    
 t = np.linspace(0,ns/10,ns+1) # define time points
 dt = t[1]-t[0] # time step duration
@@ -77,13 +78,13 @@ dt = t[1]-t[0] # time step duration
 # initial controller parameters
 def initialize(episode):
         global tune_param, pv, sp, sp_data, e, delta_e, ie, dpv, statevec
-        sd = ceil(episode/100)
+        sd = ceil(episode/10)
         random.seed(sd)
         tune_param = [random.uniform(0,4),
                         random.uniform(1,10),
                         random.uniform(0.01,1)]
-        pv = [random.uniform(0,100)]
-        sp = random.uniform(0,100)
+        pv = [0] #[random.uniform(0,100)]
+        sp = 30 #random.uniform(0,100)
         print(tune_param,pv,sp)
         sp_data = [sp] # setpoint track
         e = [0] # error list
@@ -102,19 +103,37 @@ def statevectorfunc(pv, sp, dt):
         out = np.array([e[-1],delta_e[-1],ie[-1],dpv[-1]])
         return out
 
+str_time = time.time()
+
 score_history = []
 # running for specific no of episodes
 for episode in range(1, episodes+1):
     state = env.reset()
     initialize(episode)
     done = False
-    score = 0        
+    score = 0
+
+    # add data to tensorboard
+    if episode % update_tb == 0:
+        tb.add_scalars("Tune_Param/episode-"+str(episode),{"Kp":tune_param[0],
+                                                            "Ti":tune_param[1],
+                                                            "Td":tune_param[2]},0)
+        tb.add_scalars("Process_Value/episode-"+str(episode),{"PV":pv[0],
+                                                            "SP":sp},0)
+        tb.add_scalar("Process_Input/episode-"+str(episode),0,0)
+        tb.add_scalars("StateVector/episode-"+str(episode),{"Error":statevec[0],
+                                                            "dE":statevec[1],
+                                                            "IE":statevec[2],
+                                                            "dpv":statevec[3]},0)
+        tb.add_scalars("Actor_Actions/episode-"+str(episode),{"dKp":0,
+                                                            "dTi":0,
+                                                            "dTd":0},0)      
     for k in range(0,ns):
         #env.render()
         action = agent.choose_action(statevec)
         tune_param += action
         tune_param = np.maximum([0,0.000001,0],tune_param)
-        new_state, reward, done, info  = env.step(tune_param, statevec, dt, pv[-1])
+        new_state, reward, done, info, cout  = env.step(tune_param, statevec, dt, pv[-1])
         pv.append(new_state)
         sp_data.append(sp)
         new_statevec = statevectorfunc(pv, sp, dt)
@@ -127,13 +146,17 @@ for episode in range(1, episodes+1):
         if episode % update_tb == 0:
             tb.add_scalars("Tune_Param/episode-"+str(episode),{"Kp":tune_param[0],
                                                                 "Ti":tune_param[1],
-                                                                "Td":tune_param[2]},k)
+                                                                "Td":tune_param[2]},k+1)
             tb.add_scalars("Process_Value/episode-"+str(episode),{"PV":new_state,
-                                                                "SP":sp},k)
+                                                                "SP":sp},k+1)
+            tb.add_scalar("Process_Input/episode-"+str(episode),cout,k+1)
             tb.add_scalars("StateVector/episode-"+str(episode),{"Error":statevec[0],
                                                                 "dE":statevec[1],
                                                                 "IE":statevec[2],
-                                                                "dpv":statevec[3]},k)
+                                                                "dpv":statevec[3]},k+1)
+            tb.add_scalars("Actor_Actions/episode-"+str(episode),{"dKp":action[0],
+                                                                "dTi":action[1],
+                                                                "dTd":action[2]},k+1)
     
     # Calculation of closed loop response parameters
     # Calculate ITAE (Integral of time weighted absolute error)
@@ -166,6 +189,8 @@ for episode in range(1, episodes+1):
     score_history.append(score)
     print('episode ', episode, 'score %.2f' % score,
           'trailing 100 games avg %.3f' % np.mean(score_history[-100:]))
+
+print("Total time taken in seconds: ", round(time.time()-str_time))
 
 tb.close()
 

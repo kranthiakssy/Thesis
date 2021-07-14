@@ -63,9 +63,9 @@ class PIDEnv(Env):
         D = - self.Kp * self.Td * self.dpv 
         # Controller Output
         cout = P + I + D
-        cout = np.max([0, np.min([100, cout])])
+        cout_clip = np.max([0, np.min([100, cout])])
         # Running odeint solver for ODE
-        y = odeint(self.process,self.pv,[0,self.dt],args=(cout,"dummy"))
+        y = odeint(self.process,self.pv,[0,self.dt],args=(cout_clip,"dummy"))
         self.state = y[-1][0]
  
         # Defining Reward Function
@@ -95,7 +95,7 @@ class PIDEnv(Env):
         # Info function
         info = {}
 
-        return self.state, reward, done, info
+        return self.state, reward, done, info, cout
 
     def render(self):
         # Implement viz
@@ -156,7 +156,7 @@ if __name__ == '__main__':
             #env.render()
             action = env.action_space.sample()
             tune_param += action
-            state, reward, done, info  = env.step(tune_param, statevec, dt, pv[-1])
+            state, reward, done, info, _  = env.step(tune_param, statevec, dt, pv[-1])
             pv.append(state)
             statevec = statevectorfunc(pv, sp, dt)
             score += reward

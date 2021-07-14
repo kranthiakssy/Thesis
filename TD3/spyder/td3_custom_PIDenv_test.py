@@ -75,8 +75,8 @@ dt = t[1]-t[0] # time step duration
 # initial controller parameters
 def initialize():
         global tune_param, pv, sp, sp_data, e, delta_e, ie, dpv, statevec
-        tune_param = [0.5, 15, 0.1]  # Kp, Ti, Td respectively
-        pv = [30] # process value list
+        tune_param = [0.1, 1.5, 0.1]  # Kp, Ti, Td respectively
+        pv = [0] # process value list
         sp = 32 # setpoint
         sp_data = [sp] # setpoint track
         e = [0] # error list
@@ -102,6 +102,7 @@ param_e = [0]
 param_delta_e = [0]
 param_ie = [0]
 param_dpv = [0]
+param_cout = [0]
 # running for specific no of episodes
 for episode in range(1, episodes+1):
     state = env.reset()
@@ -113,7 +114,7 @@ for episode in range(1, episodes+1):
         action = agent.test_action(statevec)
         tune_param += action
         tune_param = np.maximum([0,0.000001,0],tune_param)
-        new_state, reward, done, info  = env.step(tune_param, statevec, dt, pv[-1])
+        new_state, reward, done, info, cout  = env.step(tune_param, statevec, dt, pv[-1])
         pv.append(new_state)
         sp_data.append(sp)
         param_Kp.append(tune_param[0])
@@ -123,6 +124,7 @@ for episode in range(1, episodes+1):
         param_delta_e.append(statevec[1])
         param_ie.append(statevec[2])
         param_dpv.append(statevec[3])
+        param_cout.append(cout)
         new_statevec = statevectorfunc(pv, sp, dt)
         score += reward
         statevec = new_statevec
@@ -184,6 +186,15 @@ for episode in range(1, episodes+1):
     plt.grid()
     plt.legend()
     plt.savefig("tmp/graphs/Process_param_"+tm+".png")
+    plt.show(block=True)
+
+    # Plot Process Input parameter
+    plt.figure()
+    plt.plot(t, param_cout, label="Process_In")
+    plt.title("Process Input Parameter")
+    plt.grid()
+    plt.legend()
+    plt.savefig("tmp/graphs/Process_Input_param_"+tm+".png")
     plt.show(block=True)
     
 """     # add data to tensorboard
