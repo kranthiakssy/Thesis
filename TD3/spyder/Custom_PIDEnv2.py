@@ -4,7 +4,7 @@ Created on Tue May 25 11:54:13 2021
 
 @author: kranthi
 """
-# Closed Loop System Environment for first order system
+# Closed Loop System Environment for Second order system
 
 # Import Packages
 from gym import Env
@@ -19,17 +19,18 @@ from scipy.integrate import odeint
 class PIDEnv(Env):
     def __init__(self):
         # Actions we can take are incremental changes in Kp, Ti, Td
-        self.action_space = Box(low=np.float32(np.array([-0.2,-0.2,-0.2])),\
-                                     high=np.float32(np.array([0.2,0.2,0.2]))) #Discrete(3)
+        self.action_space = Box(low=np.float32(np.array([-0.1,-0.1,-0.1])),\
+                                     high=np.float32(np.array([0.1,0.1,0.1]))) #Discrete(3)
         # Observed Process Value 
         self.observation_space = Box(low=np.float32(np.array([-100,-100,-100,-100])),\
                                      high=np.float32(np.array([100,100,100,100])))
 
         # Initialization Parameters
         self.init_state = 0 # initial state of the process value
-        self.Gp = 2 # Process Gain
-        self.taup = 5 # Process time constant
-        self.thetap = 1 # Process delay
+        self.Gp = 1 # Process Gain
+        self.taup = 2 # Process time constant
+        self.zeta = 0.707 # Damping Factor
+        self.thetap = 0 # Process delay
 
         # Parameters for reward functions
         self.k1 = 1
@@ -40,16 +41,27 @@ class PIDEnv(Env):
         self.epsilon1 = 0.01
 
 
-    def process(self, y,t,u,dummy):
-        dydt = -y/self.taup + self.Gp/self.taup * u
-        return dydt
+    def process(self, x,t,u,dummy):
+        try:
+            if (t-self.thetap) <= 0:
+                um = 0
+            else:
+                um = u
+        except:
+            # catch any error
+            um = u
+        # two states (y and y')
+        y = x[0] - 0
+        dydt = x[1]
+        dy2dt2 = (-2.0*self.zeta*self.taup*dydt - y + self.Gp*(um))/self.taup**2
+        return [dydt, dy2dt2]
 
     # defining environment step function
-    def step(self, actionvector, statevector, dt, pv):
+    def step(self, actionvector, statevector, dt, pv, pv2, t):
         #Action arguments
         self.Kp = actionvector[0] #np.max([0,actionvector[0]]) # Proportional Gain
         self.Ti = actionvector[1] #np.max([0.000001,actionvector[1]]) # Integral Time
-        self.Td = actionvector[2] * 0 #np.max([0,actionvector[2]]) # Derivative time
+        self.Td = actionvector[2] #np.max([0,actionvector[2]]) # Derivative time
         # Statevector arguments
         self.e = statevector[0] # error: e(t)
         self.delta_e = statevector[1] # Delta error: e(t-1)-e(t)
@@ -66,10 +78,11 @@ class PIDEnv(Env):
         csat = False # Controller output saturated?
         if cout > 100 or cout < 0:
             csat = True  # Controller output saturated?
-        cout_clip = np.max([0, np.min([100, cout])])
+        cout_clip = 10 # np.max([0, np.min([100, cout])])
         # Running odeint solver for ODE
-        y = odeint(self.process,self.pv,[0,self.dt],args=(cout_clip,"dummy"))
+        y = odeint(self.process,[self.pv,pv2],[t,t+self.dt],args=(cout_clip,"dummy"))
         self.state = y[-1][0]
+        pv2 = y[-1][1]
  
         # Defining Reward Function
         # r1 function
@@ -105,7 +118,7 @@ class PIDEnv(Env):
         # Info function
         info = {}
 
-        return self.state, reward, done, info, cout, csat
+        return self.state, reward, done, info, cout, csat, pv2
 
     def render(self):
         # Implement viz
@@ -129,7 +142,7 @@ if __name__ == '__main__':
     #print("Observation")
     #print(env.observation_space.shape, type(env.observation_space))
     
-    episodes = 10 # no of episodes
+    episodes = 5 # no of episodes
     ns = 300 # no of steps to run in each episode    
     t = np.linspace(0,ns/10,ns+1) # define time points
     dt = t[1]-t[0] # time step duration
@@ -161,12 +174,13 @@ if __name__ == '__main__':
         state = env.reset()
         initialize()
         done = False
-        score = 0        
+        score = 0
+        pv2 = 0        
         for k in range(0,ns):
             #env.render()
             action = env.action_space.sample()
             tune_param += action
-            state, reward, done, info, cout, csat = env.step(tune_param, statevec, dt, pv[-1])
+            state, reward, done, info, cout, csat, pv2 = env.step(tune_param, statevec, dt, pv[-1], pv2, t[k])
             pv.append(state)
             statevec = statevectorfunc(pv, sp, dt)
             if csat == True:
@@ -174,3 +188,7 @@ if __name__ == '__main__':
             score += reward
         print('Episode:{} Score:{}'.format(episode, score))
         #print("Process Value: {}".format(pv))
+
+        plt.figure()
+        plt.plot(pv)
+        plt.show()

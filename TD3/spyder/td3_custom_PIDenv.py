@@ -59,8 +59,8 @@ agent = Agent(alpha=0.001, beta=0.001, input_dims=[state_dim], tau=0.005, env=en
 
 
 agent.load_models()
-np.random.seed(0)
-random.seed(1)
+# np.random.seed(0)
+# random.seed(1)
 
 # Tensorboard Initialization for visualization
 tb = SummaryWriter()
@@ -69,23 +69,23 @@ tb = SummaryWriter()
 # tb.add_graph(agent.actor,T.tensor([0,0,0,0]))
 
 # Iteration parameters
-episodes = 50 # no of episodes
-update_tb = 10 # Update episode no for tensorboard
+episodes = 500 # no of episodes
+update_tb = 100 # Update episode no for tensorboard
 ns = 300 # no of steps to run in each episode    
-t = np.linspace(0,ns/10,ns+1) # define time points
+t = np.linspace(0,ns/100,ns+1) # define time points
 dt = t[1]-t[0] # time step duration
 
 # initial controller parameters
 def initialize(episode):
         global tune_param, pv, sp, sp_data, e, delta_e, ie, dpv, statevec
-        sd = ceil(episode/10)
-        random.seed(sd)
-        tune_param = [random.uniform(0,4),
-                        random.uniform(1,10),
-                        random.uniform(0.01,1)]
+        # sd = ceil(episode/10)
+        # random.seed(sd)
+        tune_param = [0.1, 1, 0.01] # [random.uniform(0,4),
+                        # random.uniform(1,10),
+                        # random.uniform(0.01,1)]
         pv = [0] #[random.uniform(0,100)]
         sp = 30 #random.uniform(0,100)
-        print(tune_param,pv,sp)
+        # print(tune_param,pv,sp)
         sp_data = [sp] # setpoint track
         e = [0] # error list
         delta_e = [0] # change in error list
@@ -106,6 +106,8 @@ def statevectorfunc(pv, sp, dt):
 str_time = time.time()
 
 score_history = []
+best_score = -1e10
+cnt = 0
 # running for specific no of episodes
 for episode in range(1, episodes+1):
     state = env.reset()
@@ -132,11 +134,13 @@ for episode in range(1, episodes+1):
         #env.render()
         action = agent.choose_action(statevec)
         tune_param += action
-        tune_param = np.maximum([0,0.000001,0],tune_param)
-        new_state, reward, done, info, cout  = env.step(tune_param, statevec, dt, pv[-1])
+        tune_param = np.maximum([0,1,0],tune_param)
+        new_state, reward, done, info, cout, csat  = env.step(tune_param, statevec, dt, pv[-1])
         pv.append(new_state)
         sp_data.append(sp)
         new_statevec = statevectorfunc(pv, sp, dt)
+        if csat == True:
+            ie[-1] = ie[-2] # anti-reset windup
         agent.remember(statevec, action, reward, new_statevec, int(done))
         agent.learn()
         score += reward
@@ -146,7 +150,7 @@ for episode in range(1, episodes+1):
         if episode % update_tb == 0:
             tb.add_scalars("Tune_Param/episode-"+str(episode),{"Kp":tune_param[0],
                                                                 "Ti":tune_param[1],
-                                                                "Td":tune_param[2]},k+1)
+                                                                "Td":tune_param[2]*0},k+1)
             tb.add_scalars("Process_Value/episode-"+str(episode),{"PV":new_state,
                                                                 "SP":sp},k+1)
             tb.add_scalar("Process_Input/episode-"+str(episode),cout,k+1)
@@ -164,12 +168,21 @@ for episode in range(1, episodes+1):
     # Calculate maximum overshoot
     mos = np.max(pv) - sp
     # Calculation of rise time
-    rt = t[np.array(pv) >= (sp * 0.9)][0]
+    try:
+        rt = t[np.array(pv) >= (sp * 0.9)][0]
+    except:
+        rt = 0
     # Calculation of steady state error
     ess = statevec[0]
+
+    # Averaging the reward score over last 100 episodes
+    score_history.append(score)
+    avg_score = np.mean(score_history[-100:])
+    print('episode ', episode, 'score %.2f' % score,
+          'trailing 100 games avg %.3f' % avg_score)
     
     # add data to tensorboard
-    tb.add_scalar("Reward",score,episode)
+    tb.add_scalar("Reward",avg_score,episode)
     tb.add_scalar("End_State",new_state,episode)
     tb.add_scalar("ITAE",itae,episode)
     tb.add_scalar("OverShoot",mos,episode)
@@ -181,14 +194,21 @@ for episode in range(1, episodes+1):
         tb.add_histogram(name, weight, episode)
         tb.add_histogram(f'{name}.grad', weight.grad, episode)
 
+    # Saving Models whent the average score improves atleast 5 times
+    # if (score > best_score) and (episode > 8): # bypassing intital episodes
+        # cnt += 1
+        # best_score = score
+        # if cnt >= 5:
+            # cnt = 0
+            # agent.save_models()
+            # print("Time taken upto episode {} in seconds: {}"\
+                    # .format(episode,round(time.time()-str_time)))
+
     # Saving Models
     if episode % update_tb == 0:
         agent.save_models()
-
-    # Display episode information
-    score_history.append(score)
-    print('episode ', episode, 'score %.2f' % score,
-          'trailing 100 games avg %.3f' % np.mean(score_history[-100:]))
+        print("Time taken upto episode {} in seconds: {}"\
+            .format(episode,round(time.time()-str_time)))
 
 print("Total time taken in seconds: ", round(time.time()-str_time))
 

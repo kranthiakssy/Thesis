@@ -77,7 +77,7 @@ def initialize():
         global tune_param, pv, sp, sp_data, e, delta_e, ie, dpv, statevec
         tune_param = [0.1, 1.5, 0.1]  # Kp, Ti, Td respectively
         pv = [0] # process value list
-        sp = 32 # setpoint
+        sp = 20 # setpoint
         sp_data = [sp] # setpoint track
         e = [0] # error list
         delta_e = [0] # change in error list
@@ -113,13 +113,13 @@ for episode in range(1, episodes+1):
         #env.render()
         action = agent.test_action(statevec)
         tune_param += action
-        tune_param = np.maximum([0,0.000001,0],tune_param)
-        new_state, reward, done, info, cout  = env.step(tune_param, statevec, dt, pv[-1])
+        tune_param = np.maximum([0,1,0],tune_param)
+        new_state, reward, done, info, cout, csat  = env.step(tune_param, statevec, dt, pv[-1])
         pv.append(new_state)
         sp_data.append(sp)
         param_Kp.append(tune_param[0])
         param_Ti.append(tune_param[1])
-        param_Td.append(tune_param[2])
+        param_Td.append(tune_param[2]*0)
         param_e.append(statevec[0])
         param_delta_e.append(statevec[1])
         param_ie.append(statevec[2])
@@ -147,7 +147,10 @@ for episode in range(1, episodes+1):
     # Calculate maximum overshoot
     mos = np.max(pv) - sp
     # Calculation of rise time
-    rt = t[np.array(pv) >= (pv[0]+abs(pv[0]-sp) * 0.9)][0]
+    try:
+        rt = t[np.array(pv) >= (pv[0]+abs(pv[0]-sp) * 0.9)][0]
+    except:
+        rt = 0
     # Calculation of steady state error
     ess = statevec[0]
 
