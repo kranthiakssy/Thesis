@@ -114,6 +114,7 @@ for episode in range(1, episodes+1):
     initialize(episode)
     done = False
     score = 0
+    p_in =  []
 
     # add data to tensorboard
     if episode % update_tb == 0:
@@ -135,7 +136,7 @@ for episode in range(1, episodes+1):
         action = agent.choose_action(statevec)
         tune_param += action
         tune_param = np.maximum([0,1,0],tune_param)
-        new_state, reward, done, info, cout, csat  = env.step(tune_param, statevec, dt, pv[-1])
+        new_state, reward, done, info, cout, csat, p_in  = env.step(tune_param, statevec, dt, pv[-1], p_in)
         pv.append(new_state)
         sp_data.append(sp)
         new_statevec = statevectorfunc(pv, sp, dt)

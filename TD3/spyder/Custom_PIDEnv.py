@@ -41,11 +41,21 @@ class PIDEnv(Env):
 
 
     def process(self, y,t,u,dummy):
-        dydt = -y/self.taup + self.Gp/self.taup * u
+        # try:
+        if (len(u)*0.1-self.thetap) <= 0:
+            um = u[0]
+        else:
+            um = u[len(u)-int(self.thetap/0.1)-1]
+        # except:
+            #print('Error with time extrapolation: ' + str(t))
+            # um = 0
+        # print(u)
+        # calculate derivative
+        dydt = -y/self.taup + self.Gp/self.taup * um
         return dydt
 
     # defining environment step function
-    def step(self, actionvector, statevector, dt, pv):
+    def step(self, actionvector, statevector, dt, pv, p_in):
         #Action arguments
         self.Kp = actionvector[0] #np.max([0,actionvector[0]]) # Proportional Gain
         self.Ti = actionvector[1] #np.max([0.000001,actionvector[1]]) # Integral Time
@@ -67,8 +77,9 @@ class PIDEnv(Env):
         if cout > 100 or cout < 0:
             csat = True  # Controller output saturated?
         cout_clip = np.max([0, np.min([100, cout])])
+        p_in.append(cout_clip)
         # Running odeint solver for ODE
-        y = odeint(self.process,self.pv,[0,self.dt],args=(cout_clip,"dummy"))
+        y = odeint(self.process,self.pv,[0,self.dt],args=(p_in,"dummy"))
         self.state = y[-1][0]
  
         # Defining Reward Function
@@ -105,7 +116,7 @@ class PIDEnv(Env):
         # Info function
         info = {}
 
-        return self.state, reward, done, info, cout, csat
+        return self.state, reward, done, info, cout, csat, p_in
 
     def render(self):
         # Implement viz
@@ -161,12 +172,13 @@ if __name__ == '__main__':
         state = env.reset()
         initialize()
         done = False
-        score = 0        
+        score = 0
+        p_in = []      
         for k in range(0,ns):
             #env.render()
             action = env.action_space.sample()
             tune_param += action
-            state, reward, done, info, cout, csat = env.step(tune_param, statevec, dt, pv[-1])
+            state, reward, done, info, cout, csat,  p_in = env.step(tune_param, statevec, dt, pv[-1], p_in)
             pv.append(state)
             statevec = statevectorfunc(pv, sp, dt)
             if csat == True:

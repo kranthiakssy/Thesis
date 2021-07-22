@@ -77,7 +77,7 @@ def initialize():
         global tune_param, pv, sp, sp_data, e, delta_e, ie, dpv, statevec
         tune_param = [0.1, 1.5, 0.1]  # Kp, Ti, Td respectively
         pv = [0] # process value list
-        sp = 20 # setpoint
+        sp = 30 # setpoint
         sp_data = [sp] # setpoint track
         e = [0] # error list
         delta_e = [0] # change in error list
@@ -108,13 +108,14 @@ for episode in range(1, episodes+1):
     state = env.reset()
     initialize()
     done = False
-    score = 0        
+    score = 0       
+    p_in = [] 
     for k in range(0,ns):
         #env.render()
         action = agent.test_action(statevec)
         tune_param += action
         tune_param = np.maximum([0,1,0],tune_param)
-        new_state, reward, done, info, cout, csat  = env.step(tune_param, statevec, dt, pv[-1])
+        new_state, reward, done, info, cout, csat, p_in  = env.step(tune_param, statevec, dt, pv[-1], p_in)
         pv.append(new_state)
         sp_data.append(sp)
         param_Kp.append(tune_param[0])
@@ -125,6 +126,11 @@ for episode in range(1, episodes+1):
         param_ie.append(statevec[2])
         param_dpv.append(statevec[3])
         param_cout.append(cout)
+        # if k >= 150 and k < 200:
+            # sp = 50
+        # elif k >= 200:
+            # sp = 30
+        # sp = 5*np.sin(2*np.pi*k/100)+30
         new_statevec = statevectorfunc(pv, sp, dt)
         score += reward
         statevec = new_statevec
