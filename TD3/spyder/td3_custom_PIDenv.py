@@ -58,7 +58,7 @@ agent = Agent(alpha=0.001, beta=0.001, input_dims=[state_dim], tau=0.005, env=en
               action_bound=action_bound)
 
 
-agent.load_models()
+# agent.load_models()
 # np.random.seed(0)
 # random.seed(1)
 
@@ -69,8 +69,8 @@ tb = SummaryWriter()
 # tb.add_graph(agent.actor,T.tensor([0,0,0,0]))
 
 # Iteration parameters
-episodes = 500 # no of episodes
-update_tb = 100 # Update episode no for tensorboard
+episodes = 50 # no of episodes
+update_tb = 10 # Update episode no for tensorboard
 ns = 300 # no of steps to run in each episode    
 t = np.linspace(0,ns/100,ns+1) # define time points
 dt = t[1]-t[0] # time step duration
@@ -124,6 +124,7 @@ for episode in range(1, episodes+1):
         tb.add_scalars("Process_Value/episode-"+str(episode),{"PV":pv[0],
                                                             "SP":sp},0)
         tb.add_scalar("Process_Input/episode-"+str(episode),0,0)
+        tb.add_scalar("Reward_Score/episode-"+str(episode),0,0)
         tb.add_scalars("StateVector/episode-"+str(episode),{"Error":statevec[0],
                                                             "dE":statevec[1],
                                                             "IE":statevec[2],
@@ -151,10 +152,11 @@ for episode in range(1, episodes+1):
         if episode % update_tb == 0:
             tb.add_scalars("Tune_Param/episode-"+str(episode),{"Kp":tune_param[0],
                                                                 "Ti":tune_param[1],
-                                                                "Td":tune_param[2]*0},k+1)
+                                                                "Td":tune_param[2]},k+1)
             tb.add_scalars("Process_Value/episode-"+str(episode),{"PV":new_state,
                                                                 "SP":sp},k+1)
             tb.add_scalar("Process_Input/episode-"+str(episode),cout,k+1)
+            tb.add_scalar("Reward_Score/episode-"+str(episode),reward,k+1)
             tb.add_scalars("StateVector/episode-"+str(episode),{"Error":statevec[0],
                                                                 "dE":statevec[1],
                                                                 "IE":statevec[2],

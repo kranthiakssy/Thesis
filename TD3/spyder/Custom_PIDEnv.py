@@ -59,7 +59,7 @@ class PIDEnv(Env):
         #Action arguments
         self.Kp = actionvector[0] #np.max([0,actionvector[0]]) # Proportional Gain
         self.Ti = actionvector[1] #np.max([0.000001,actionvector[1]]) # Integral Time
-        self.Td = actionvector[2] * 0 #np.max([0,actionvector[2]]) # Derivative time
+        self.Td = actionvector[2] #np.max([0,actionvector[2]]) # Derivative time
         # Statevector arguments
         self.e = statevector[0] # error: e(t)
         self.delta_e = statevector[1] # Delta error: e(t-1)-e(t)
@@ -108,7 +108,7 @@ class PIDEnv(Env):
         else:
             r5 = 0
         # total reward         
-        reward = r1+r2+r3+r4+r5
+        reward = r1+r2+r3+r4 #+r5
 
         # Checking end of simulation
         done = False

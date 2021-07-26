@@ -40,8 +40,6 @@ def plotLearning(scores, filename, x=None, window=5):
 
 # Defining gym environment
 env = PIDEnv()
-#gym.make('Pendulum-v0') # 'LunarLanderContinuous-v2', 'MountainCarContinuous-v0',
-                                # 'Pendulum-v0'
 
 # Define all the state and action dimensions, and the bound of the action
 state_dim = env.observation_space.shape[0]
@@ -58,12 +56,6 @@ agent = Agent(alpha=0.001, beta=0.001, input_dims=[state_dim], tau=0.005, env=en
 
 agent.load_models()
 np.random.seed(0)
-
-# Tensorboard Initialization for visualization
-# tb = SummaryWriter()
-
-# adding models graphs to tensorboard
-# tb.add_graph(agent.actor,T.tensor([0,0,0,0]))
 
 # Iteration parameters
 episodes = 1 # no of episodes
@@ -135,17 +127,6 @@ for episode in range(1, episodes+1):
         score += reward
         statevec = new_statevec
 
-        # add data to tensorboard
-        """ if episode % update_tb == 0:
-            tb.add_scalars("Tune_Param/Test-"+str(episode),{"Kp":tune_param[0],
-                                                                "Ti":tune_param[1],
-                                                                "Td":tune_param[2]},k)
-            tb.add_scalars("Process_Value/Test-"+str(episode),{"PV":new_state,
-                                                                "SP":sp},k)
-            tb.add_scalars("StateVector/Test-"+str(episode),{"Error":statevec[0],
-                                                                "dE":statevec[1],
-                                                                "IE":statevec[2],
-                                                                "dpv":statevec[3]},k) """
     
     # Calculation of closed loop response parameters
     # Calculate ITAE (Integral of time weighted absolute error)
@@ -191,6 +172,7 @@ for episode in range(1, episodes+1):
     plt.figure()
     plt.plot(t, pv, label="PV")
     plt.plot(t, sp_data, label="SP")
+    plt.plot(t, param_cout, label="Process_In")
     plt.title("Process Parameters")
     plt.grid()
     plt.legend()
@@ -206,18 +188,4 @@ for episode in range(1, episodes+1):
     plt.savefig("tmp/graphs/Process_Input_param_"+tm+".png")
     plt.show(block=True)
     
-"""     # add data to tensorboard
-    tb.add_scalar("Reward",score,episode)
-    tb.add_scalar("End_State",new_state,episode)
-    tb.add_scalar("ITAE",itae,episode)
-    tb.add_scalar("OverShoot",mos,episode)
-    tb.add_scalar("RiseTime",rt,episode)
-    tb.add_scalar("SteadyStateError",ess,episode)
-
-    # Display episode information
-    score_history.append(score)
-    print('episode ', episode, 'score %.2f' % score,
-          'trailing 100 games avg %.3f' % np.mean(score_history[-100:]))
-
-tb.close() """
 
