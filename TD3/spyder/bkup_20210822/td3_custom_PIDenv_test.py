@@ -40,8 +40,6 @@ def plotLearning(scores, filename, x=None, window=5):
 
 # Defining gym environment
 env = PIDEnv()
-#gym.make('Pendulum-v0') # 'LunarLanderContinuous-v2', 'MountainCarContinuous-v0',
-                                # 'Pendulum-v0'
 
 # Define all the state and action dimensions, and the bound of the action
 state_dim = env.observation_space.shape[0]
@@ -59,12 +57,6 @@ agent = Agent(alpha=0.001, beta=0.001, input_dims=[state_dim], tau=0.005, env=en
 agent.load_models()
 np.random.seed(0)
 
-# Tensorboard Initialization for visualization
-# tb = SummaryWriter()
-
-# adding models graphs to tensorboard
-# tb.add_graph(agent.actor,T.tensor([0,0,0,0]))
-
 # Iteration parameters
 episodes = 1 # no of episodes
 update_tb = 1 # Update episode no for tensorboard
@@ -74,7 +66,7 @@ dt = t[1]-t[0] # time step duration
 
 # initial controller parameters
 def initialize():
-        global tune_param, pv, sp, sp_data, e, delta_e, ie, dpv, statevec, smoothing
+        global tune_param, pv, sp, sp_data, e, delta_e, ie, dpv, statevec
         tune_param = [0.1, 1.5, 0.1]  # Kp, Ti, Td respectively
         pv = [0] # process value list
         sp = 30 # setpoint
@@ -84,7 +76,6 @@ def initialize():
         ie = [0] # integral error list
         dpv = [0] # change in pv list
         statevec = np.array([0,0,0,0]) # e, delta_e, ie, dpv
-        smoothing = 1 # smoothing factor
 
 
 # action space function
@@ -94,8 +85,7 @@ def statevectorfunc(pv, sp, dt):
         ie.append(ie[-1]+e[-1]*dt)
         dpv.append((pv[-1]-pv[-2])/dt)
         out = np.array([e[-1],delta_e[-1],ie[-1],dpv[-1]])
-        smoothing = abs(e[-1]/sp)
-        return out, smoothing
+        return out
 
 param_Kp = [0]
 param_Ti = [0]
@@ -110,13 +100,14 @@ for episode in range(1, episodes+1):
     state = env.reset()
     initialize()
     done = False
-    score = 0        
+    score = 0       
+    p_in = [] 
     for k in range(0,ns):
         #env.render()
         action = agent.test_action(statevec)
-        tune_param += action * smoothing
+        tune_param += action
         tune_param = np.maximum([0,1,0],tune_param)
-        new_state, reward, done, info, cout, csat  = env.step(tune_param, statevec, dt, pv[-1])
+        new_state, reward, done, info, cout, csat, p_in  = env.step(tune_param, statevec, dt, pv[-1], p_in)
         pv.append(new_state)
         sp_data.append(sp)
         param_Kp.append(tune_param[0])
@@ -127,26 +118,15 @@ for episode in range(1, episodes+1):
         param_ie.append(statevec[2])
         param_dpv.append(statevec[3])
         param_cout.append(cout)
-        """ if k >= 150 and k < 200:
-            sp = 50
-        elif k >= 200:
-            sp = 60 """
+        # if k >= 150 and k < 200:
+            # sp = 50
+        # elif k >= 200:
+            # sp = 30
         # sp = 5*np.sin(2*np.pi*k/100)+30
-        new_statevec, smoothing = statevectorfunc(pv, sp, dt)
+        new_statevec = statevectorfunc(pv, sp, dt)
         score += reward
         statevec = new_statevec
 
-        # add data to tensorboard
-        """ if episode % update_tb == 0:
-            tb.add_scalars("Tune_Param/Test-"+str(episode),{"Kp":tune_param[0],
-                                                                "Ti":tune_param[1],
-                                                                "Td":tune_param[2]},k)
-            tb.add_scalars("Process_Value/Test-"+str(episode),{"PV":new_state,
-                                                                "SP":sp},k)
-            tb.add_scalars("StateVector/Test-"+str(episode),{"Error":statevec[0],
-                                                                "dE":statevec[1],
-                                                                "IE":statevec[2],
-                                                                "dpv":statevec[3]},k) """
     
     # Calculation of closed loop response parameters
     # Calculate ITAE (Integral of time weighted absolute error)
@@ -192,6 +172,7 @@ for episode in range(1, episodes+1):
     plt.figure()
     plt.plot(t, pv, label="PV")
     plt.plot(t, sp_data, label="SP")
+    plt.plot(t, param_cout, label="Process_In")
     plt.title("Process Parameters")
     plt.grid()
     plt.legend()
@@ -207,18 +188,4 @@ for episode in range(1, episodes+1):
     plt.savefig("tmp/graphs/Process_Input_param_"+tm+".png")
     plt.show(block=True)
     
-"""     # add data to tensorboard
-    tb.add_scalar("Reward",score,episode)
-    tb.add_scalar("End_State",new_state,episode)
-    tb.add_scalar("ITAE",itae,episode)
-    tb.add_scalar("OverShoot",mos,episode)
-    tb.add_scalar("RiseTime",rt,episode)
-    tb.add_scalar("SteadyStateError",ess,episode)
-
-    # Display episode information
-    score_history.append(score)
-    print('episode ', episode, 'score %.2f' % score,
-          'trailing 100 games avg %.3f' % np.mean(score_history[-100:]))
-
-tb.close() """
 

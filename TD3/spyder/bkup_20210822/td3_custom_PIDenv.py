@@ -22,9 +22,9 @@ import gym
 import matplotlib.pyplot as plt
 
 # Importing local functions
-from ProcessModel import ProcessModel
+#from ddpg_module import CriticNetwork, ActorNetwork, OUActionNoise, ReplayBuffer
 from td3_agent import Agent
-from Process_PIDEnv import PIDEnv
+from Custom_PIDEnv import PIDEnv
 
 # Function for plotting scores
 def plotLearning(scores, filename, x=None, window=5):   
@@ -59,7 +59,7 @@ agent = Agent(alpha=0.001, beta=0.001, input_dims=[state_dim], tau=0.005, env=en
 
 
 # agent.load_models()
-np.random.seed(0)
+# np.random.seed(0)
 # random.seed(1)
 
 # Tensorboard Initialization for visualization
@@ -69,10 +69,10 @@ tb = SummaryWriter()
 # tb.add_graph(agent.actor,T.tensor([0,0,0,0]))
 
 # Iteration parameters
-episodes = 3000 # no of episodes
-update_tb = 600 # Update episode no for tensorboard
+episodes = 50 # no of episodes
+update_tb = 10 # Update episode no for tensorboard
 ns = 300 # no of steps to run in each episode    
-t = np.linspace(0,ns/10,ns+1) # define time points
+t = np.linspace(0,ns/100,ns+1) # define time points
 dt = t[1]-t[0] # time step duration
 
 # initial controller parameters
@@ -80,7 +80,7 @@ def initialize(episode):
         global tune_param, pv, sp, sp_data, e, delta_e, ie, dpv, statevec
         # sd = ceil(episode/10)
         # random.seed(sd)
-        tune_param = [2, 5] # [random.uniform(0,4),
+        tune_param = [0.1, 1, 0.01] # [random.uniform(0,4),
                         # random.uniform(1,10),
                         # random.uniform(0.01,1)]
         pv = [0] #[random.uniform(0,100)]
@@ -103,9 +103,6 @@ def statevectorfunc(pv, sp, dt):
         out = np.array([e[-1],delta_e[-1],ie[-1],dpv[-1]])
         return out
 
-# State Space parameters of Process Model
-prm = ProcessModel(2,[9,6,1],0,dt) # num, dnum, delay, time_step
-
 str_time = time.time()
 
 score_history = []
@@ -117,12 +114,13 @@ for episode in range(1, episodes+1):
     initialize(episode)
     done = False
     score = 0
-    X = prm[6]
-    U = [0]
+    p_in =  []
+
     # add data to tensorboard
     if episode % update_tb == 0:
         tb.add_scalars("Tune_Param/episode-"+str(episode),{"Kp":tune_param[0],
-                                                            "Ti":tune_param[1]},0)
+                                                            "Ti":tune_param[1],
+                                                            "Td":tune_param[2]},0)
         tb.add_scalars("Process_Value/episode-"+str(episode),{"PV":pv[0],
                                                             "SP":sp},0)
         tb.add_scalar("Process_Input/episode-"+str(episode),0,0)
@@ -132,13 +130,14 @@ for episode in range(1, episodes+1):
                                                             "IE":statevec[2],
                                                             "dpv":statevec[3]},0)
         tb.add_scalars("Actor_Actions/episode-"+str(episode),{"dKp":0,
-                                                            "dTi":0},0)      
+                                                            "dTi":0,
+                                                            "dTd":0},0)      
     for k in range(0,ns):
         #env.render()
         action = agent.choose_action(statevec)
         tune_param += action
-        tune_param = np.maximum([0,1],tune_param)
-        new_state, reward, done, info, cout, csat, X, U  = env.step(tune_param, statevec, dt, prm, X, U)
+        tune_param = np.maximum([0,1,0],tune_param)
+        new_state, reward, done, info, cout, csat, p_in  = env.step(tune_param, statevec, dt, pv[-1], p_in)
         pv.append(new_state)
         sp_data.append(sp)
         new_statevec = statevectorfunc(pv, sp, dt)
@@ -152,7 +151,8 @@ for episode in range(1, episodes+1):
         # add data to tensorboard
         if episode % update_tb == 0:
             tb.add_scalars("Tune_Param/episode-"+str(episode),{"Kp":tune_param[0],
-                                                                "Ti":tune_param[1]},k+1)
+                                                                "Ti":tune_param[1],
+                                                                "Td":tune_param[2]},k+1)
             tb.add_scalars("Process_Value/episode-"+str(episode),{"PV":new_state,
                                                                 "SP":sp},k+1)
             tb.add_scalar("Process_Input/episode-"+str(episode),cout,k+1)
@@ -162,7 +162,8 @@ for episode in range(1, episodes+1):
                                                                 "IE":statevec[2],
                                                                 "dpv":statevec[3]},k+1)
             tb.add_scalars("Actor_Actions/episode-"+str(episode),{"dKp":action[0],
-                                                                "dTi":action[1]},k+1)
+                                                                "dTi":action[1],
+                                                                "dTd":action[2]},k+1)
     
     # Calculation of closed loop response parameters
     # Calculate ITAE (Integral of time weighted absolute error)

@@ -58,7 +58,7 @@ agent = Agent(alpha=0.001, beta=0.001, input_dims=[state_dim], tau=0.005, env=en
               action_bound=action_bound)
 
 
-# agent.load_models()
+agent.load_models()
 # np.random.seed(0)
 # random.seed(1)
 
@@ -69,18 +69,18 @@ tb = SummaryWriter()
 # tb.add_graph(agent.actor,T.tensor([0,0,0,0]))
 
 # Iteration parameters
-episodes = 50 # no of episodes
-update_tb = 10 # Update episode no for tensorboard
+episodes = 1500 # no of episodes
+update_tb = 300 # Update episode no for tensorboard
 ns = 300 # no of steps to run in each episode    
 t = np.linspace(0,ns/100,ns+1) # define time points
 dt = t[1]-t[0] # time step duration
 
 # initial controller parameters
 def initialize(episode):
-        global tune_param, pv, sp, sp_data, e, delta_e, ie, dpv, statevec
+        global tune_param, pv, sp, sp_data, e, delta_e, ie, dpv, statevec, smoothing
         # sd = ceil(episode/10)
         # random.seed(sd)
-        tune_param = [0.1, 1, 0.01] # [random.uniform(0,4),
+        tune_param = [0.1, 1, 0] # [random.uniform(0,4),
                         # random.uniform(1,10),
                         # random.uniform(0.01,1)]
         pv = [0] #[random.uniform(0,100)]
@@ -92,6 +92,7 @@ def initialize(episode):
         ie = [0] # integral error list
         dpv = [0] # change in pv list
         statevec = np.array([0,0,0,0]) # e, delta_e, ie, dpv
+        smoothing = 1 # smoothing factor
 
 
 # action space function
@@ -101,7 +102,8 @@ def statevectorfunc(pv, sp, dt):
         ie.append(ie[-1]+e[-1]*dt)
         dpv.append((pv[-1]-pv[-2])/dt)
         out = np.array([e[-1],delta_e[-1],ie[-1],dpv[-1]])
-        return out
+        smoothing = abs(e[-1]/sp)
+        return out, smoothing
 
 str_time = time.time()
 
@@ -114,7 +116,6 @@ for episode in range(1, episodes+1):
     initialize(episode)
     done = False
     score = 0
-    p_in =  []
 
     # add data to tensorboard
     if episode % update_tb == 0:
@@ -124,7 +125,6 @@ for episode in range(1, episodes+1):
         tb.add_scalars("Process_Value/episode-"+str(episode),{"PV":pv[0],
                                                             "SP":sp},0)
         tb.add_scalar("Process_Input/episode-"+str(episode),0,0)
-        tb.add_scalar("Reward_Score/episode-"+str(episode),0,0)
         tb.add_scalars("StateVector/episode-"+str(episode),{"Error":statevec[0],
                                                             "dE":statevec[1],
                                                             "IE":statevec[2],
@@ -135,12 +135,12 @@ for episode in range(1, episodes+1):
     for k in range(0,ns):
         #env.render()
         action = agent.choose_action(statevec)
-        tune_param += action
+        tune_param += action * smoothing
         tune_param = np.maximum([0,1,0],tune_param)
-        new_state, reward, done, info, cout, csat, p_in  = env.step(tune_param, statevec, dt, pv[-1], p_in)
+        new_state, reward, done, info, cout, csat  = env.step(tune_param, statevec, dt, pv[-1])
         pv.append(new_state)
         sp_data.append(sp)
-        new_statevec = statevectorfunc(pv, sp, dt)
+        new_statevec, smoothing = statevectorfunc(pv, sp, dt)
         if csat == True:
             ie[-1] = ie[-2] # anti-reset windup
         agent.remember(statevec, action, reward, new_statevec, int(done))
@@ -152,11 +152,10 @@ for episode in range(1, episodes+1):
         if episode % update_tb == 0:
             tb.add_scalars("Tune_Param/episode-"+str(episode),{"Kp":tune_param[0],
                                                                 "Ti":tune_param[1],
-                                                                "Td":tune_param[2]},k+1)
+                                                                "Td":tune_param[2]*0},k+1)
             tb.add_scalars("Process_Value/episode-"+str(episode),{"PV":new_state,
                                                                 "SP":sp},k+1)
             tb.add_scalar("Process_Input/episode-"+str(episode),cout,k+1)
-            tb.add_scalar("Reward_Score/episode-"+str(episode),reward,k+1)
             tb.add_scalars("StateVector/episode-"+str(episode),{"Error":statevec[0],
                                                                 "dE":statevec[1],
                                                                 "IE":statevec[2],

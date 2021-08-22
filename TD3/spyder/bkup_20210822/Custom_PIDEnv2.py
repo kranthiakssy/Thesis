@@ -10,19 +10,17 @@ Created on Tue May 25 11:54:13 2021
 from gym import Env
 from gym.spaces import Discrete, Box
 import numpy as np
-from numpy import (dtype, real, atleast_1d, atleast_2d, squeeze, asarray, zeros,
-                   dot, transpose, ones, zeros_like, linspace, nan_to_num)
 import random
 import matplotlib.pyplot as plt
 from scipy.integrate import odeint
-from ProcessModel import ProcessModel
+
 
 # Custom Environment creation
 class PIDEnv(Env):
     def __init__(self):
         # Actions we can take are incremental changes in Kp, Ti, Td
-        self.action_space = Box(low=np.float32(np.array([-0.2,-0.2])),\
-                                     high=np.float32(np.array([0.2,0.2]))) #Discrete(3)
+        self.action_space = Box(low=np.float32(np.array([-0.1,-0.1,-0.1])),\
+                                     high=np.float32(np.array([0.1,0.1,0.1]))) #Discrete(3)
         # Observed Process Value 
         self.observation_space = Box(low=np.float32(np.array([-100,-100,-100,-100])),\
                                      high=np.float32(np.array([100,100,100,100])))
@@ -42,38 +40,49 @@ class PIDEnv(Env):
         self.epsilon = 0.01
         self.epsilon1 = 0.01
 
+
+    def process(self, x,t,u,dummy):
+        try:
+            if (t-self.thetap) <= 0:
+                um = 0
+            else:
+                um = u
+        except:
+            # catch any error
+            um = u
+        # two states (y and y')
+        y = x[0] - 0
+        dydt = x[1]
+        dy2dt2 = (-2.0*self.zeta*self.taup*dydt - y + self.Gp*(um))/self.taup**2
+        return [dydt, dy2dt2]
+
     # defining environment step function
-    def step(self, actionvector, statevector, dt, prm, X, U):
+    def step(self, actionvector, statevector, dt, pv, pv2, t):
         #Action arguments
         self.Kp = actionvector[0] #np.max([0,actionvector[0]]) # Proportional Gain
         self.Ti = actionvector[1] #np.max([0.000001,actionvector[1]]) # Integral Time
-        # self.Td = actionvector[2]*0 #np.max([0,actionvector[2]]) # Derivative time
+        self.Td = actionvector[2] #np.max([0,actionvector[2]]) # Derivative time
         # Statevector arguments
         self.e = statevector[0] # error: e(t)
         self.delta_e = statevector[1] # Delta error: e(t-1)-e(t)
         self.ie = statevector[2] # Integral Error: ie(t-1) + e(t) * dt
         self.dpv =  statevector[3] # Process value rate of change: (PV(t)-PV(t-1))/dt
         self.dt = dt # time step duration: (t)-(t-1)
+        self.pv = pv # Process Value: pv
        # PID terms
         P = self.Kp * self.e # P-Term
         I = self.Kp / self.Ti * self.ie # I-Term
-        # D = - self.Kp * self.Td * self.dpv # D-Term
+        D = - self.Kp * self.Td * self.dpv # D-Term
         # Controller Output
-        cout = P + I #+ D
+        cout = P + I + D
         csat = False # Controller output saturated?
         if cout > 100 or cout < 0:
             csat = True  # Controller output saturated?
-        cout_clip = np.max([0, np.min([100, cout])])
-        U.append(cout_clip)
-        # running process model in state space form
-        delay = prm[5]
-        if len(U)-1 > delay:
-            Xdot = dot(X, prm[0]) + dot(U[-2-delay], prm[1]) + dot(U[-1-delay], prm[2])
-            y = squeeze(dot(X, transpose(prm[3]))) + squeeze(dot(U[-2-delay], transpose(prm[4])))
-        else:
-            Xdot = dot(X, prm[0]) + dot(U[0], prm[1]) + dot(U[0], prm[2])
-            y = squeeze(dot(X, transpose(prm[3]))) + squeeze(dot(U[0], transpose(prm[4])))
-        self.state = y
+        cout_clip = 10 # np.max([0, np.min([100, cout])])
+        # Running odeint solver for ODE
+        y = odeint(self.process,[self.pv,pv2],[t,t+self.dt],args=(cout_clip,"dummy"))
+        self.state = y[-1][0]
+        pv2 = y[-1][1]
  
         # Defining Reward Function
         # r1 function
@@ -100,18 +109,8 @@ class PIDEnv(Env):
             r5 = cout
         else:
             r5 = 0
-        # r6 function
-        if abs(U[-1]-U[-2]) <= 0.2:
-            r6 = 0 #self.c1
-        else:
-            r6 = -self.c1 #abs(U[-1]-U[-2])
-        # r7 function
-        if self.e < (self.delta_e+self.e):
-            r7 = self.c2
-        else:
-            r7 = - self.k1 * abs(self.delta_e)
         # total reward         
-        reward = r1+r7+r3+r4
+        reward = r1+r2+r3+r4+r5
 
         # Checking end of simulation
         done = False
@@ -119,10 +118,10 @@ class PIDEnv(Env):
         # Info function
         info = {}
 
-        return self.state, reward, done, info, cout, csat, Xdot, U
+        return self.state, reward, done, info, cout, csat, pv2
 
     def render(self):
-        # Implement visualization
+        # Implement viz
         pass
     
     def reset(self):
@@ -151,7 +150,7 @@ if __name__ == '__main__':
     # initial controller parameters
     def initialize():
         global tune_param, pv, sp, e, delat_e, ie, dpv, statevec
-        tune_param = [0.1, 2]  # Kp, Ti, Td respectively
+        tune_param = [0.1, 2, 0.1]  # Kp, Ti, Td respectively
         pv = [0] # process value list
         sp = 20 # setpoint
         e = [0] # error list
@@ -169,9 +168,6 @@ if __name__ == '__main__':
         dpv.append((pv[-1]-pv[-2])/dt)
         statevec = [e[-1], delat_e[-1],ie[-1],dpv[-1]]
         return statevec
-    
-    # State Space parameters of Process Model
-    prm = ProcessModel(2,[9,4.2,1],0,dt) # num, dnum, delay, time_step
 
     # running for specific no of episodes
     for episode in range(1, episodes+1):
@@ -179,13 +175,12 @@ if __name__ == '__main__':
         initialize()
         done = False
         score = 0
-        X = prm[6]
-        U = [0]        
+        pv2 = 0        
         for k in range(0,ns):
             #env.render()
             action = env.action_space.sample()
             tune_param += action
-            state, reward, done, info, cout, csat, X, U = env.step(tune_param, statevec, dt, prm, X, U)
+            state, reward, done, info, cout, csat, pv2 = env.step(tune_param, statevec, dt, pv[-1], pv2, t[k])
             pv.append(state)
             statevec = statevectorfunc(pv, sp, dt)
             if csat == True:
@@ -194,6 +189,6 @@ if __name__ == '__main__':
         print('Episode:{} Score:{}'.format(episode, score))
         #print("Process Value: {}".format(pv))
 
-        """ plt.figure()
+        plt.figure()
         plt.plot(pv)
-        plt.show() """
+        plt.show()
